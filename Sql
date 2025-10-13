@@ -1,0 +1,57 @@
+-- Enum para gêneros (valor fixo, pequeno e raro de mudar)
+CRIAR TIPO genero_enum COMO ENUM ( 
+  'cisgênero', 'transgênero', 'não-binário', 'intersexo',
+  'agênero', 'outro', 'prefiro_não_dizer'
+);
+-- Tabela base de usuários
+CREATE TABLE usuarios (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    nome VARCHAR(100) NOT NULL,
+ e-mail VARCHAR(100) NÃO NULO ÚNICO, 
+ Gênero genero_enum, 
+ data_nascimento DATA, 
+ criado_em CURRENT_TIMESTAMP PADRÃO DE CARIMBO DE DATA/HORA 
+);
+
+-- Tabela de profissionais
+CREATE TABLE profissionais (
+ usuario_id REFERÊNCIAS DE CHAVE PRIMÁRIA UUID usuarios(id), 
+ registro_profissional VARCHAR(30) NÃO NULO 
+);
+
+-- Tabela de pacientes
+CRIAR TABELA pacientes ( 
+ usuario_id REFERÊNCIAS DE CHAVE PRIMÁRIA UUID usuarios(id), 
+    prontuario JSONB  -- Justificativa abaixo
+);
+
+-- Tabela de especialidades
+CREATE TABLE especialidades (
+ id CHAVE PRIMÁRIA SERIAL, 
+ nome VARCHAR(100) NÃO NULO 
+);
+
+-- Tabela de associação profissional <-> especialidade
+CRIAR profissionais_especialidades TABELA ( 
+ usuario_id UUID REFERÊNCIAS profissionais(usuario_id), 
+ especialidade_id INT REFERÊNCIAS especialidades(id), 
+ CHAVE PRIMÁRIA (usuario_id, especialidade_id) 
+);
+
+-- Tabela de atendimentos
+CREATE TABLE atendimentos (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+ paciente_id UUID REFERÊNCIAS pacientes(usuario_id), 
+ profissional_id UUID REFERÊNCIAS profissionais(usuario_id), 
+ data_hora CARIMBO DE DATA/HORA NÃO NULO, 
+ descrição TEXTO 
+);
+-- Índices para busca rápida por nome e email
+CREATE INDEX idx_usuarios_nome ON usuarios (nome);
+CRIAR ÍNDICE idx_usuarios_email EM usuários (e-mail); 
+
+-- Índices para acelerar busca por especialidade
+CRIAR idx_profissionais_especialidades_especialidade_id DE ÍNDICE NO profissionais_especialidades (especialidade_id); 
+
+-- Índices para data dos atendimentos
+CRIAR idx_atendimentos_data_hora DE ÍNDICE SOBRE atendimentos (data_hora); 
