@@ -1,57 +1,138 @@
--- Enum para gêneros (valor fixo, pequeno e raro de mudar)
-CRIAR TIPO genero_enum COMO ENUM ( 
-  'cisgênero', 'transgênero', 'não-binário', 'intersexo',
-  'agênero', 'outro', 'prefiro_não_dizer'
+-- ========================================
+-- BANCO DE DADOS: Plataforma Lacrei Saúde
+-- Objetivo: Modelagem de usuários, profissionais,
+-- pacientes, especialidades e atendimentos
+-- ========================================
+
+-- ========================================
+-- 1. Tipos ENUM
+-- ========================================
+CREATE TYPE genero_enum AS ENUM (
+  'cisgênero',
+  'transgênero',
+  'não-binário',
+  'intersexo',
+  'agênero',
+  'outro',
+  'prefiro_não_dizer'
 );
--- Tabela base de usuários
+
+-- ========================================
+-- 2. Tabela base de usuários
+-- ========================================
 CREATE TABLE usuarios (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     nome VARCHAR(100) NOT NULL,
- e-mail VARCHAR(100) NÃO NULO ÚNICO, 
- Gênero genero_enum, 
- data_nascimento DATA, 
- criado_em CURRENT_TIMESTAMP PADRÃO DE CARIMBO DE DATA/HORA 
+    email VARCHAR(100) NOT NULL UNIQUE,
+    genero genero_enum,
+    data_nascimento DATE,
+    criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Tabela de profissionais
+-- Índices para busca rápida
+CREATE INDEX idx_usuarios_nome ON usuarios (nome);
+CREATE INDEX idx_usuarios_email ON usuarios (email);
+
+-- ========================================
+-- 3. Tabela de profissionais
+-- ========================================
 CREATE TABLE profissionais (
- usuario_id REFERÊNCIAS DE CHAVE PRIMÁRIA UUID usuarios(id), 
- registro_profissional VARCHAR(30) NÃO NULO 
+    usuario_id UUID PRIMARY KEY REFERENCES usuarios(id),
+    registro_profissional VARCHAR(30) NOT NULL
 );
 
--- Tabela de pacientes
-CRIAR TABELA pacientes ( 
- usuario_id REFERÊNCIAS DE CHAVE PRIMÁRIA UUID usuarios(id), 
-    prontuario JSONB  -- Justificativa abaixo
+-- ========================================
+-- 4. Tabela de pacientes
+-- ========================================
+CREATE TABLE pacientes (
+    usuario_id UUID PRIMARY KEY REFERENCES usuarios(id),
+    prontuario JSONB
+    -- uso do JSONB justificado no README
 );
 
--- Tabela de especialidades
+-- ========================================
+-- 5. Tabela de especialidades
+-- ========================================
 CREATE TABLE especialidades (
- id CHAVE PRIMÁRIA SERIAL, 
- nome VARCHAR(100) NÃO NULO 
+    id SERIAL PRIMARY KEY,
+    nome VARCHAR(100) NOT NULL
 );
 
--- Tabela de associação profissional <-> especialidade
-CRIAR profissionais_especialidades TABELA ( 
- usuario_id UUID REFERÊNCIAS profissionais(usuario_id), 
- especialidade_id INT REFERÊNCIAS especialidades(id), 
- CHAVE PRIMÁRIA (usuario_id, especialidade_id) 
+-- ========================================
+-- 6. Associação Profissional <-> Especialidade (N:N)
+-- ========================================
+CREATE TABLE profissionais_especialidades (
+    usuario_id UUID REFERENCES profissionais(usuario_id),
+    especialidade_id INT REFERENCES especialidades(id),
+    PRIMARY KEY (usuario_id, especialidade_id)
 );
 
--- Tabela de atendimentos
+-- Índice para busca rápida por especialidade
+CREATE INDEX idx_profissionais_especialidades_especialidade_id
+    ON profissionais_especialidades (especialidade_id);
+
+-- ========================================
+-- 7. Tabela de atendimentos
+-- ========================================
 CREATE TABLE atendimentos (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
- paciente_id UUID REFERÊNCIAS pacientes(usuario_id), 
- profissional_id UUID REFERÊNCIAS profissionais(usuario_id), 
- data_hora CARIMBO DE DATA/HORA NÃO NULO, 
- descrição TEXTO 
+    paciente_id UUID REFERENCES pacientes(usuario_id),
+    profissional_id UUID REFERENCES profissionais(usuario_id),
+    data_hora TIMESTAMP NOT NULL,
+    descricao TEXT,
+    CONSTRAINT unique_profissional_horario UNIQUE (profissional_id, data_hora),
+    CONSTRAINT check_data_futura CHECK (data_hora >= NOW()),
+    CONSTRAINT check_paciente_profissional_diferentes CHECK (paciente_id <> profissional_id)
 );
--- Índices para busca rápida por nome e email
-CREATE INDEX idx_usuarios_nome ON usuarios (nome);
-CRIAR ÍNDICE idx_usuarios_email EM usuários (e-mail); 
 
--- Índices para acelerar busca por especialidade
-CRIAR idx_profissionais_especialidades_especialidade_id DE ÍNDICE NO profissionais_especialidades (especialidade_id); 
+-- Índice para consultas por data
+CREATE INDEX idx_atendimentos_data_hora ON atendimentos (data_hora);
 
--- Índices para data dos atendimentos
-CRIAR idx_atendimentos_data_hora DE ÍNDICE SOBRE atendimentos (data_hora); 
+-- Índices para FKs
+CREATE INDEX idx_atendimentos_paciente_id ON atendimentos (paciente_id);
+CREATE INDEX idx_atendimentos_profissional_id ON atendimentos (profissional_id);
+
+-- ========================================
+-- 8. Inserção de dados de exemplo
+-- ========================================
+-- Usuários
+INSERT INTO usuarios (nome, email, genero, data_nascimento)
+VALUES
+  ('Ana Souza', 'ana.souza@example.com', 'cisgênero', '1990-05-10'),
+  ('Carlos Lima', 'carlos.lima@example.com', 'transgênero', '1985-09-22');
+
+-- Profissional (Carlos)
+INSERT INTO profissionais (usuario_id, registro_profissional)
+SELECT id, 'CRM-123456' FROM usuarios WHERE email = 'carlos.lima@example.com';
+
+-- Paciente (Ana)
+INSERT INTO pacientes (usuario_id, prontuario)
+SELECT id, '{"alergias": ["penicilina"], "historico": "sem doenças crônicas"}'::jsonb
+FROM usuarios WHERE email = 'ana.souza@example.com';
+
+-- Especialidades
+INSERT INTO especialidades (nome)
+VALUES ('Clínico Geral'), ('Endocrinologia');
+
+-- Associação profissional-especialidade
+INSERT INTO profissionais_especialidades (usuario_id, especialidade_id)
+SELECT p.usuario_id, e.id
+FROM profissionais p, especialidades e
+WHERE e.nome IN ('Clínico Geral', 'Endocrinologia')
+LIMIT 2;
+
+-- Atendimentos
+INSERT INTO atendimentos (paciente_id, profissional_id, data_hora, descricao)
+SELECT
+  (SELECT usuario_id FROM pacientes LIMIT 1),
+  (SELECT usuario_id FROM profissionais LIMIT 1),
+  NOW() + INTERVAL '1 day',
+  'Consulta de rotina';
+  
+INSERT INTO atendimentos (paciente_id, profissional_id, data_hora, descricao)
+SELECT
+  (SELECT usuario_id FROM pacientes LIMIT 1),
+  (SELECT usuario_id FROM profissionais LIMIT 1),
+  NOW() + INTERVAL '10 day',
+  'Revisão geral';
+
